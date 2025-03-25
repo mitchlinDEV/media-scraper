@@ -47,6 +47,7 @@ def download(url, path='.', rename=None, replace=True):
         r = requests.get(url, stream=True)
         if r.status_code == 200:
             safe_makedirs(path)
+            os.makedirs(os.path.dirname(file), exist_ok=True)
             with open(file, 'wb') as f:
                 for chunk in r:
                     f.write(chunk)

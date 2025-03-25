@@ -10,6 +10,7 @@ from os.path import dirname, exists, join
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
+from selenium.webdriver.chrome.service import Service
 
 SRC_URL_DICT = {
     'webdriver/phantomjsdriver_2.1.1_win32/phantomjs.exe': 'https://www.dropbox.com/s/y1sc5ujzhdqb9f4/phantomjs.exe?dl=1', 
@@ -39,8 +40,6 @@ def get(driverType, localDriver=True, path='.'):
             driver = webdriver.PhantomJS(service_log_path=join(path, 'phantomjs.log'), service_args=["--remote-debugger-port=9000", "--web-security=false"])
             # driver = webdriver.PhantomJS(service_args=["--remote-debugger-port=9000", "--web-security=false"])
     elif driverType == 'Chrome':
-        desired = DesiredCapabilities.CHROME
-        desired['loggingPrefs'] = {'browser': 'ALL'}
         chrome_options = Options()
         chrome_options.add_argument("--start-maximized")
         chrome_options.add_argument("--disable-infobars")
@@ -48,10 +47,10 @@ def get(driverType, localDriver=True, path='.'):
         # chrome_options.add_argument("--window-size=800,600")
         # chrome_options.add_argument("--headless") # will not show the Chrome browser window
         if localDriver:
-            source = get_source(driverType, path)
-            driver = webdriver.Chrome(executable_path=source, service_log_path=join(path, 'chromedriver.log'), desired_capabilities=desired, chrome_options=chrome_options)
+            driver = webdriver.Chrome(options=chrome_options)
         else:
-            driver = webdriver.Chrome(service_log_path=join(path, 'chromedriver.log'), desired_capabilities=desired, chrome_options=chrome_options)
+            service = Service(log_path=join(path, 'chromedriver.log'))
+            driver = webdriver.Chrome(service=service, options=chrome_options)
     elif driverType == 'Firefox':
         # desired = DesiredCapabilities.FIREFOX
         # desired['loggingPrefs'] = {'browser': 'ALL'}

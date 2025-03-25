@@ -12,6 +12,7 @@ import re
 from abc import ABCMeta, abstractmethod
 from bs4 import BeautifulSoup as bs
 from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
 from tqdm import tqdm
 from util import seleniumdriver
 from util.file import get_basename, get_extension, rename_file, safe_makedirs
@@ -19,9 +20,44 @@ from util.instagram import parse_node
 from util.twitter import get_twitter_video_url
 from util.url import get_filename, complete_url, download, is_media
 
+def sanitize_filename(name):
+    import re
+    name = re.sub(r'[<>:"/\\|?*\n\r\t]', '_', name)
+    return name.strip().rstrip('. ')
+
 class Scraper(metaclass=ABCMeta):
 
-    def __init__(self, driver='phantomjs', scroll_pause=1.0, next_page_pause=1.0, mode='normal', debug=False):
+    def scrape_recursive(self, url, max_depth=3, visited=None):
+        if visited is None:
+            visited = set()
+
+        if url in visited or max_depth == 0:
+            return []
+
+        visited.add(url)
+
+        try:
+            tasks = self.scrape(url)
+        except Exception as e:
+            print(f"[!] Failed to scrape {url}: {e}")
+            return []
+
+        # Parse links from the current page
+        self._connect(url)
+        soup = bs(self.source(), 'html.parser')
+        links = [
+            complete_url(a['href'], self._driver.current_url)
+            for a in soup.find_all('a', href=True)
+            if a['href'].startswith('/') or a['href'].startswith('http')
+        ]
+
+        # Recursively go deeper
+        for link in links:
+            tasks += self.scrape_recursive(link, max_depth=max_depth - 1, visited=visited)
+
+        return tasks
+
+    def __init__(self, driver='chrome', scroll_pause=1.0, next_page_pause=1.0, mode='normal', debug=False):
         self._scroll_pause_time = scroll_pause
         self._next_page_pause_time = next_page_pause
         self._login_pause_time = 5.0
@@ -134,7 +170,8 @@ class MediaScraper(Scraper):
 
         media_urls = [] 
         soup = bs(source, 'html.parser')
-        title = soup.find('title').text
+        raw_title = soup.find('title').text
+        title = sanitize_filename(raw_title)
         for link in soup.find_all('a', href=True):
             if is_media(link['href']):
                 media_urls.append(link['href'])
@@ -371,7 +408,6 @@ class InstagramScraper(Scraper):
         button.click()
         time.sleep(self._login_pause_time)
 
-
 class TwitterScraper(Scraper):
     
     def __init__(self, **kwargs):
@@ -505,9 +541,9 @@ class FacebookScraper(Scraper):
 
         email = self._driver.find_element_by_tag_name('email')
         password = self._driver.find_element_by_tag_name('pass')
-        buttons = self._driver.find_element_by_tag_name('login')
+        button = self._driver.find_element_by_tag_name('login')
 
-        username.send_keys(credentials['email'])
+        email.send_keys(credentials['email'])
         password.send_keys(credentials['password'])
         button.click()
         time.sleep(self._login_pause_time)
