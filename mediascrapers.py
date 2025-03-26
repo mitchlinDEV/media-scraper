@@ -19,6 +19,8 @@ from util.file import get_basename, get_extension, rename_file, safe_makedirs
 from util.instagram import parse_node
 from util.twitter import get_twitter_video_url
 from util.url import get_filename, complete_url, download, is_media
+from urllib.parse import urlparse, urlunparse
+from collections import deque
 
 def sanitize_filename(name):
     import re
@@ -134,14 +136,81 @@ class Scraper(metaclass=ABCMeta):
     def scrape(self):
         return None
 
-    def download(self, tasks, path='.', force=False):
-        if self._mode != 'silent':
-            print('Downloading...')
-        for url, folder, rename in tqdm(tasks):
-            target_path = path
-            if folder is not None:
-                target_path = os.path.join(target_path, folder)
-            download(url, path=target_path, rename=rename, replace=force)
+    def scrape_recursive_full_site(self, url, visited=None):
+        from urllib.parse import urlparse, urlunparse
+        from collections import deque
+        import time
+
+        def normalize_url(url):
+            parsed = urlparse(url)
+            path = parsed.path.rstrip('/')
+            return urlunparse(('https', parsed.netloc, path, '', '', ''))
+
+        if visited is None:
+            visited = set()
+
+        sitemap_path = "sitemap.txt"
+        queue = deque([url])
+        all_tasks = []
+
+        while queue:
+            current_url = queue.popleft()
+            norm_url = normalize_url(current_url)
+
+            if norm_url in visited:
+                continue
+
+            visited.add(norm_url)
+            print(f"[+] Visiting: {current_url}")
+
+            # Log to sitemap
+            with open(sitemap_path, 'a', encoding='utf-8') as f:
+                f.write(norm_url + '\n')
+
+            for attempt in range(3):  # Retry up to 3 times
+                try:
+                    self._connect(current_url)
+                    soup = bs(self.source(), 'html.parser')
+
+                    # CAPTCHA detection (basic)
+                    if "captcha" in soup.text.lower():
+                        print("[⚠️] CAPTCHA detected. Please solve it in the browser.")
+                        input("Press Enter when you've solved the CAPTCHA...")
+
+                    break  # Break if successful
+                except Exception as e:
+                    print(f"[!] Failed to load {current_url} (attempt {attempt + 1}): {e}")
+                    time.sleep(3)
+            else:
+                continue  # Skip this URL if all retries fail
+
+            # Scrape media
+            try:
+                page_tasks = self.scrape(current_url)
+                all_tasks.extend(page_tasks)
+            except Exception as e:
+                print(f"[!] scrape() failed on {current_url}: {e}")
+
+            # Discover more links
+            for a in soup.find_all('a', href=True):
+                href = a['href']
+                if href.startswith('#') or 'javascript:' in href.lower():
+                    continue
+
+                full_url = complete_url(href, current_url)
+                parsed = urlparse(full_url)
+
+                if parsed.netloc != 'candidteens.net':
+                    continue
+
+                norm_link = normalize_url(full_url)
+
+                if norm_link not in visited:
+                    queue.append(full_url)
+
+            time.sleep(1)  # Throttle to avoid rate limiting
+
+        return all_tasks
 
     @abstractmethod
     def login(self):

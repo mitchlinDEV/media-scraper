@@ -45,7 +45,7 @@ def get(driverType, localDriver=True, path='.'):
         chrome_options.add_argument("--disable-infobars")
         chrome_options.add_argument("--disable-web-security")
         # chrome_options.add_argument("--window-size=800,600")
-        # chrome_options.add_argument("--headless") # will not show the Chrome browser window
+        chrome_options.add_argument("--headless") # will not show the Chrome browser window
         if localDriver:
             driver = webdriver.Chrome(options=chrome_options)
         else:
